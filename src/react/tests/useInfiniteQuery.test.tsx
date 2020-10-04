@@ -17,7 +17,8 @@ import {
 
 interface Result {
   items: number[]
-  nextId: number
+  nextId?: number
+  prevId?: number
   ts: number
 }
 
@@ -27,6 +28,7 @@ const initialItems = (page: number): Result => {
   return {
     items: [...new Array(10)].fill(null).map((_, d) => page * pageSize + d),
     nextId: page + 1,
+    prevId: page - 1,
     ts: page,
   }
 }
@@ -34,12 +36,14 @@ const initialItems = (page: number): Result => {
 const fetchItems = async (
   page: number,
   ts: number,
-  nextId?: any
+  noNext?: boolean,
+  noPrev?: boolean
 ): Promise<Result> => {
   await sleep(10)
   return {
     items: [...new Array(10)].fill(null).map((_, d) => page * pageSize + d),
-    nextId: nextId ?? page + 1,
+    nextId: noNext ? undefined : page + 1,
+    prevId: noPrev ? undefined : page - 1,
     ts,
   }
 }
@@ -59,7 +63,7 @@ describe('useInfiniteQuery', () => {
         key,
         (_key: string, nextId: number = 0) => fetchItems(nextId, count++),
         {
-          getFetchMore: (lastGroup, _allGroups) => lastGroup.nextId,
+          getNextPageParam: (lastGroup, _allGroups) => lastGroup.nextId,
         }
       )
 
@@ -77,16 +81,19 @@ describe('useInfiniteQuery', () => {
     await waitFor(() => rendered.getByText('Status: success'))
 
     expect(states[0]).toEqual({
-      canFetchMore: undefined,
       data: undefined,
       error: null,
       failureCount: 0,
-      fetchMore: expect.any(Function),
+      fetchNextPage: expect.any(Function),
+      fetchPreviousPage: expect.any(Function),
+      hasNextPage: undefined,
+      hasPreviousPage: undefined,
       isError: false,
       isFetched: false,
       isFetchedAfterMount: false,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: false,
       isIdle: false,
       isLoading: true,
       isPreviousData: false,
@@ -99,22 +106,26 @@ describe('useInfiniteQuery', () => {
     })
 
     expect(states[1]).toEqual({
-      canFetchMore: true,
       data: [
         {
           items: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
           nextId: 1,
+          prevId: -1,
           ts: 0,
         },
       ],
       error: null,
       failureCount: 0,
-      fetchMore: expect.any(Function),
-      isFetchingMore: false,
+      fetchNextPage: expect.any(Function),
+      fetchPreviousPage: expect.any(Function),
+      hasNextPage: true,
+      hasPreviousPage: undefined,
       isError: false,
       isFetched: true,
       isFetchedAfterMount: true,
       isFetching: false,
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: false,
       isIdle: false,
       isLoading: false,
       isPreviousData: false,
@@ -127,7 +138,7 @@ describe('useInfiniteQuery', () => {
     })
   })
 
-  it('should not throw when fetchMore returns an error', async () => {
+  it('should not throw when fetchNextPage returns an error', async () => {
     const consoleMock = mockConsoleError()
     const key = queryKey()
     let noThrow: boolean
@@ -145,21 +156,21 @@ describe('useInfiniteQuery', () => {
         {
           retry: 1,
           retryDelay: 10,
-          getFetchMore: (lastPage, _pages) => lastPage + 1,
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
         }
       )
 
-      const { fetchMore } = state
+      const { fetchNextPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
-          fetchMore()
+          fetchNextPage()
             .then(() => {
               noThrow = true
             })
             .catch(() => undefined)
         }, 20)
-      }, [fetchMore])
+      }, [fetchNextPage])
 
       return null
     }
@@ -184,23 +195,23 @@ describe('useInfiniteQuery', () => {
           return `${pageArg}-${orderArg}`
         },
         {
-          getFetchMore: (_lastGroup, _allGroups) => 1,
+          getNextPageParam: (_lastGroup, _allGroups) => 1,
           keepPreviousData: true,
         }
       )
 
       states.push(state)
 
-      const { fetchMore } = state
+      const { fetchNextPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
-          fetchMore()
+          fetchNextPage()
         }, 50)
         setActTimeout(() => {
           setOrder('asc')
         }, 100)
-      }, [fetchMore])
+      }, [fetchNextPage])
 
       return null
     }
@@ -213,28 +224,28 @@ describe('useInfiniteQuery', () => {
     expect(states[0]).toMatchObject({
       data: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: false,
       isPreviousData: false,
     })
     expect(states[1]).toMatchObject({
       data: ['0-desc'],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
       isPreviousData: false,
     })
     expect(states[2]).toMatchObject({
       data: ['0-desc'],
       isFetching: true,
-      isFetchingMore: 'next',
+      isFetchingNextPage: true,
       isSuccess: true,
       isPreviousData: false,
     })
     expect(states[3]).toMatchObject({
       data: ['0-desc', '1-desc'],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
       isPreviousData: false,
     })
@@ -242,21 +253,21 @@ describe('useInfiniteQuery', () => {
     expect(states[4]).toMatchObject({
       data: ['0-desc', '1-desc'],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
       isPreviousData: false,
     })
     expect(states[5]).toMatchObject({
       data: ['0-desc', '1-desc'],
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
       isPreviousData: true,
     })
     expect(states[6]).toMatchObject({
       data: ['0-asc'],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
       isPreviousData: false,
     })
@@ -289,7 +300,7 @@ describe('useInfiniteQuery', () => {
     })
   })
 
-  it('should prepend pages when the previous option is set to true', async () => {
+  it('should be able to fetch a previous page', async () => {
     const key = queryKey()
     const states: UseInfiniteQueryResult<number>[] = []
 
@@ -302,19 +313,19 @@ describe('useInfiniteQuery', () => {
           return page
         },
         {
-          getFetchMore: (lastPage, _pages) => lastPage - 1,
+          getPreviousPageParam: (lastPage, _pages) => lastPage - 1,
         }
       )
 
       states.push(state)
 
-      const { fetchMore } = state
+      const { fetchPreviousPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
-          fetchMore(undefined, { previous: true })
+          fetchPreviousPage()
         }, 20)
-      }, [fetchMore])
+      }, [fetchPreviousPage])
 
       return null
     }
@@ -325,31 +336,169 @@ describe('useInfiniteQuery', () => {
 
     expect(states.length).toBe(4)
     expect(states[0]).toMatchObject({
-      canFetchMore: undefined,
       data: undefined,
+      hasNextPage: undefined,
+      hasPreviousPage: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: false,
       isSuccess: false,
     })
     expect(states[1]).toMatchObject({
-      canFetchMore: true,
       data: [10],
+      hasNextPage: undefined,
+      hasPreviousPage: true,
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: false,
       isSuccess: true,
     })
     expect(states[2]).toMatchObject({
-      canFetchMore: true,
       data: [10],
+      hasNextPage: undefined,
+      hasPreviousPage: true,
       isFetching: true,
-      isFetchingMore: 'previous',
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: true,
       isSuccess: true,
     })
     expect(states[3]).toMatchObject({
-      canFetchMore: true,
       data: [9, 10],
+      hasNextPage: undefined,
+      hasPreviousPage: true,
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
+      isFetchingPreviousPage: false,
+      isSuccess: true,
+    })
+  })
+
+  it('should prepend pages when the append mode is set to prepend', async () => {
+    const key = queryKey()
+    const states: UseInfiniteQueryResult<number>[] = []
+
+    function Page() {
+      const start = 10
+      const state = useInfiniteQuery(
+        key,
+        async (_key, page: number = start) => {
+          await sleep(10)
+          return page
+        },
+        {
+          pageAppendMode: 'prepend',
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
+        }
+      )
+
+      states.push(state)
+
+      const { fetchNextPage } = state
+
+      React.useEffect(() => {
+        setActTimeout(() => {
+          fetchNextPage()
+        }, 20)
+      }, [fetchNextPage])
+
+      return null
+    }
+
+    renderWithClient(client, <Page />)
+
+    await waitFor(() => expect(states.length).toBe(4))
+
+    expect(states[0]).toMatchObject({
+      hasNextPage: undefined,
+      data: undefined,
+      isFetching: true,
+      isFetchingNextPage: false,
+      isSuccess: false,
+    })
+    expect(states[1]).toMatchObject({
+      hasNextPage: true,
+      data: [10],
+      isFetching: false,
+      isFetchingNextPage: false,
+      isSuccess: true,
+    })
+    expect(states[2]).toMatchObject({
+      hasNextPage: true,
+      data: [10],
+      isFetching: true,
+      isFetchingNextPage: true,
+      isSuccess: true,
+    })
+    expect(states[3]).toMatchObject({
+      hasNextPage: true,
+      data: [11, 10],
+      isFetching: false,
+      isFetchingNextPage: false,
+      isSuccess: true,
+    })
+  })
+
+  it('should append pages when the append mode is prepend and a previous page is fetched', async () => {
+    const key = queryKey()
+    const states: UseInfiniteQueryResult<number>[] = []
+
+    function Page() {
+      const start = 10
+      const state = useInfiniteQuery(
+        key,
+        async (_key, page: number = start) => {
+          await sleep(10)
+          return page
+        },
+        {
+          pageAppendMode: 'prepend',
+          getPreviousPageParam: (lastPage, _pages) => lastPage - 1,
+        }
+      )
+
+      states.push(state)
+
+      const { fetchPreviousPage } = state
+
+      React.useEffect(() => {
+        setActTimeout(() => {
+          fetchPreviousPage()
+        }, 20)
+      }, [fetchPreviousPage])
+
+      return null
+    }
+
+    renderWithClient(client, <Page />)
+
+    await waitFor(() => expect(states.length).toBe(4))
+
+    expect(states[0]).toMatchObject({
+      hasPreviousPage: undefined,
+      data: undefined,
+      isFetching: true,
+      isFetchingPreviousPage: false,
+      isSuccess: false,
+    })
+    expect(states[1]).toMatchObject({
+      hasPreviousPage: true,
+      data: [10],
+      isFetching: false,
+      isFetchingPreviousPage: false,
+      isSuccess: true,
+    })
+    expect(states[2]).toMatchObject({
+      hasPreviousPage: true,
+      data: [10],
+      isFetching: true,
+      isFetchingPreviousPage: true,
+      isSuccess: true,
+    })
+    expect(states[3]).toMatchObject({
+      hasPreviousPage: true,
+      data: [10, 9],
+      isFetching: false,
+      isFetchingPreviousPage: false,
       isSuccess: true,
     })
   })
@@ -367,22 +516,22 @@ describe('useInfiniteQuery', () => {
           return page
         },
         {
-          getFetchMore: (lastPage, _pages) => lastPage + 1,
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
         }
       )
 
       states.push(state)
 
-      const { refetch, fetchMore } = state
+      const { refetch, fetchNextPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
           refetch()
         }, 100)
         setActTimeout(() => {
-          fetchMore()
+          fetchNextPage()
         }, 110)
-      }, [fetchMore, refetch])
+      }, [fetchNextPage, refetch])
 
       return null
     }
@@ -393,38 +542,38 @@ describe('useInfiniteQuery', () => {
 
     expect(states.length).toBe(5)
     expect(states[0]).toMatchObject({
-      canFetchMore: undefined,
+      hasNextPage: undefined,
       data: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: false,
     })
     expect(states[1]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [10],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     expect(states[2]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [10],
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     expect(states[3]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [10],
       isFetching: true,
-      isFetchingMore: 'next',
+      isFetchingNextPage: true,
       isSuccess: true,
     })
     expect(states[4]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [10, 11],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
   })
@@ -442,19 +591,19 @@ describe('useInfiniteQuery', () => {
           return page
         },
         {
-          getFetchMore: (lastPage, _pages) => lastPage + 1,
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
         }
       )
 
       states.push(state)
 
-      const { refetch, fetchMore } = state
+      const { refetch, fetchNextPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
-          fetchMore()
+          fetchNextPage()
         }, 10)
-      }, [fetchMore, refetch])
+      }, [fetchNextPage, refetch])
 
       return null
     }
@@ -465,22 +614,22 @@ describe('useInfiniteQuery', () => {
 
     expect(states.length).toBe(2)
     expect(states[0]).toMatchObject({
-      canFetchMore: undefined,
+      hasNextPage: undefined,
       data: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: false,
     })
     expect(states[1]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [10],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
   })
 
-  it('should be able to override the cursor in the fetchMore callback', async () => {
+  it('should be able to override the cursor in the fetchNextPage callback', async () => {
     const key = queryKey()
     const states: UseInfiniteQueryResult<number>[] = []
 
@@ -492,19 +641,19 @@ describe('useInfiniteQuery', () => {
           return page
         },
         {
-          getFetchMore: (lastPage, _pages) => lastPage + 1,
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
         }
       )
 
       states.push(state)
 
-      const { fetchMore } = state
+      const { fetchNextPage } = state
 
       React.useEffect(() => {
         setActTimeout(() => {
-          fetchMore(5)
+          fetchNextPage(5)
         }, 20)
-      }, [fetchMore])
+      }, [fetchNextPage])
 
       return null
     }
@@ -515,31 +664,31 @@ describe('useInfiniteQuery', () => {
 
     expect(states.length).toBe(4)
     expect(states[0]).toMatchObject({
-      canFetchMore: undefined,
+      hasNextPage: undefined,
       data: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: false,
     })
     expect(states[1]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [0],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     expect(states[2]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [0],
       isFetching: true,
-      isFetchingMore: 'next',
+      isFetchingNextPage: true,
       isSuccess: true,
     })
     expect(states[3]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [0, 5],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
   })
@@ -558,7 +707,7 @@ describe('useInfiniteQuery', () => {
           return page
         },
         {
-          getFetchMore: (lastPage, _pages) => lastPage + 1,
+          getNextPageParam: (lastPage, _pages) => lastPage + 1,
         }
       )
 
@@ -586,50 +735,50 @@ describe('useInfiniteQuery', () => {
 
     expect(states.length).toBe(6)
     expect(states[0]).toMatchObject({
-      canFetchMore: undefined,
+      hasNextPage: undefined,
       data: undefined,
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: false,
     })
     // After first fetch
     expect(states[1]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [0],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     // Set state
     expect(states[2]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [0],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     // Cache update
     expect(states[3]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [7, 8],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     // Refetch
     expect(states[4]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [7, 8],
       isFetching: true,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
     // Refetch done
     expect(states[5]).toMatchObject({
-      canFetchMore: true,
+      hasNextPage: true,
       data: [7, 8],
       isFetching: false,
-      isFetchingMore: false,
+      isFetchingNextPage: false,
       isSuccess: true,
     })
   })
@@ -644,15 +793,15 @@ describe('useInfiniteQuery', () => {
         data,
         error,
         isFetching,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error>(
         key,
         (_key, nextId = 0) => fetchItems(nextId, fetchCountRef.current++),
         {
-          getFetchMore: (lastGroup, _allGroups) => lastGroup.nextId,
+          getNextPageParam: (lastGroup, _allGroups) => lastGroup.nextId,
         }
       )
 
@@ -680,19 +829,19 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
                 <button onClick={() => refetch()}>Refetch</button>
               </div>
               <div>
-                {isFetching && !isFetchingMore
+                {isFetching && !isFetchingNextPage
                   ? 'Background Updating...'
                   : null}
               </div>
@@ -731,7 +880,7 @@ describe('useInfiniteQuery', () => {
     })
   })
 
-  it('should compute canFetchMore correctly for falsy getFetchMore return value', async () => {
+  it('should compute hasNextPage correctly for falsy getFetchMore return value', async () => {
     const key = queryKey()
 
     function Page() {
@@ -741,15 +890,15 @@ describe('useInfiniteQuery', () => {
         data,
         error,
         isFetching,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error, [string, number]>(
         key,
         (_key, nextId = 0) => fetchItems(nextId, fetchCountRef.current++),
         {
-          getFetchMore: (_lastGroup, _allGroups) => undefined,
+          getNextPageParam: (_lastGroup, _allGroups) => undefined,
         }
       )
 
@@ -777,19 +926,19 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
                 <button onClick={() => refetch()}>Refetch</button>
               </div>
               <div>
-                {isFetching && !isFetchingMore
+                {isFetching && !isFetchingNextPage
                   ? 'Background Updating...'
                   : null}
               </div>
@@ -811,7 +960,7 @@ describe('useInfiniteQuery', () => {
     rendered.getByText('Nothing more to load')
   })
 
-  it('should compute canFetchMore correctly using initialData', async () => {
+  it('should compute hasNextPage correctly using initialData', async () => {
     const key = queryKey()
 
     function Page() {
@@ -821,9 +970,9 @@ describe('useInfiniteQuery', () => {
         data,
         error,
         isFetching,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error>(
         key,
@@ -831,7 +980,7 @@ describe('useInfiniteQuery', () => {
         {
           staleTime: 1000,
           initialData: [initialItems(0)],
-          getFetchMore: (lastGroup, _allGroups) => lastGroup.nextId,
+          getNextPageParam: (lastGroup, _allGroups) => lastGroup.nextId,
         }
       )
 
@@ -859,19 +1008,19 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
                 <button onClick={() => refetch()}>Refetch</button>
               </div>
               <div>
-                {isFetching && !isFetchingMore
+                {isFetching && !isFetchingNextPage
                   ? 'Background Updating...'
                   : null}
               </div>
@@ -905,7 +1054,7 @@ describe('useInfiniteQuery', () => {
     })
   })
 
-  it('should compute canFetchMore correctly for falsy getFetchMore return value using initialData', async () => {
+  it('should compute hasNextPage correctly for falsy getFetchMore return value using initialData', async () => {
     const key = queryKey()
 
     function Page() {
@@ -915,9 +1064,9 @@ describe('useInfiniteQuery', () => {
         data,
         error,
         isFetching,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error, [string, number]>(
         key,
@@ -925,7 +1074,7 @@ describe('useInfiniteQuery', () => {
         {
           staleTime: 1000,
           initialData: [initialItems(0)],
-          getFetchMore: (_lastGroup, _allGroups) => undefined,
+          getNextPageParam: (_lastGroup, _allGroups) => undefined,
         }
       )
 
@@ -953,19 +1102,19 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
                 <button onClick={() => refetch()}>Refetch</button>
               </div>
               <div>
-                {isFetching && !isFetchingMore
+                {isFetching && !isFetchingNextPage
                   ? 'Background Updating...'
                   : null}
               </div>
@@ -1006,16 +1155,16 @@ describe('useInfiniteQuery', () => {
         status,
         data,
         error,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error>(
         key,
         (_key, nextId = 0) =>
           fetchItemsWithLimit(nextId, fetchCountRef.current++),
         {
-          getFetchMore: (lastGroup, _allGroups) => lastGroup.nextId,
+          getNextPageParam: (lastGroup, _allGroups) => lastGroup.nextId,
         }
       )
 
@@ -1043,12 +1192,12 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
@@ -1065,7 +1214,7 @@ describe('useInfiniteQuery', () => {
                   Remove item
                 </button>
               </div>
-              <div>{!isFetchingMore ? 'Background Updating...' : null}</div>
+              <div>{!isFetchingNextPage ? 'Background Updating...' : null}</div>
             </>
           )}
         </div>
@@ -1119,7 +1268,7 @@ describe('useInfiniteQuery', () => {
     expect(rendered.queryAllByText('Item: 4')).toHaveLength(0)
   })
 
-  it('should compute canFetchMore correctly for falsy getFetchMore return value on refetching', async () => {
+  it('should compute hasNextPage correctly for falsy getFetchMore return value on refetching', async () => {
     const key = queryKey()
     const MAX = 2
 
@@ -1133,9 +1282,9 @@ describe('useInfiniteQuery', () => {
         data,
         error,
         isFetching,
-        isFetchingMore,
-        fetchMore,
-        canFetchMore,
+        isFetchingNextPage,
+        fetchNextPage,
+        hasNextPage,
         refetch,
       } = useInfiniteQuery<Result, Error>(
         key,
@@ -1144,11 +1293,9 @@ describe('useInfiniteQuery', () => {
             nextId,
             fetchCountRef.current++,
             nextId === MAX || (nextId === MAX - 1 && isRemovedLastPage)
-              ? false
-              : undefined
           ),
         {
-          getFetchMore: (lastGroup, _allGroups) => lastGroup.nextId,
+          getNextPageParam: (lastGroup, _allGroups) => lastGroup.nextId,
         }
       )
 
@@ -1176,12 +1323,12 @@ describe('useInfiniteQuery', () => {
               ))}
               <div>
                 <button
-                  onClick={() => fetchMore()}
-                  disabled={!canFetchMore || Boolean(isFetchingMore)}
+                  onClick={() => fetchNextPage()}
+                  disabled={!hasNextPage || Boolean(isFetchingNextPage)}
                 >
-                  {isFetchingMore
+                  {isFetchingNextPage
                     ? 'Loading more...'
-                    : canFetchMore
+                    : hasNextPage
                     ? 'Load More'
                     : 'Nothing more to load'}
                 </button>
@@ -1191,7 +1338,7 @@ describe('useInfiniteQuery', () => {
                 </button>
               </div>
               <div>
-                {isFetching && !isFetchingMore
+                {isFetching && !isFetchingNextPage
                   ? 'Background Updating...'
                   : null}
               </div>

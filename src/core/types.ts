@@ -15,10 +15,17 @@ export type ShouldRetryFunction<TError = unknown> = (
   error: TError
 ) => boolean
 
-export type GetFetchMoreVariableFunction<TQueryFnData = unknown> = (
+export type GetPreviousPageParamFunction<TQueryFnData = unknown> = (
+  firstPage: TQueryFnData,
+  allPages: TQueryFnData[]
+) => unknown | undefined
+
+export type GetNextPageParamFunction<TQueryFnData = unknown> = (
   lastPage: TQueryFnData,
   allPages: TQueryFnData[]
-) => unknown
+) => unknown | undefined
+
+export type PageAppendMode = 'append' | 'prepend'
 
 export type RetryDelayFunction = (attempt: number) => number
 
@@ -50,10 +57,21 @@ export interface QueryOptions<
    */
   structuralSharing?: boolean
   /**
-   * This function can be set to automatically get the next cursor for infinite queries.
-   * The result will also be used to determine the value of `canFetchMore`.
+   * Set the append mode for infinite queries.
+   * If `append`, then pages are appended
+   * If `prepend`, then pages are prepended.
    */
-  getFetchMore?: GetFetchMoreVariableFunction<TQueryFnData>
+  pageAppendMode?: PageAppendMode
+  /**
+   * This function can be set to automatically get the previous cursor for infinite queries.
+   * The result will also be used to determine the value of `hasPreviousPage`.
+   */
+  getPreviousPageParam?: GetPreviousPageParamFunction<TQueryFnData>
+  /**
+   * This function can be set to automatically get the next cursor for infinite queries.
+   * The result will also be used to determine the value of `hasNextPage`.
+   */
+  getNextPageParam?: GetNextPageParamFunction<TQueryFnData>
 }
 
 export interface FetchQueryOptions<
@@ -166,28 +184,32 @@ export interface InvalidateOptions {
   throwOnError?: boolean
 }
 
-export interface FetchMoreOptions extends ResultOptions {
-  previous?: boolean
-}
+export interface FetchPreviousPageOptions extends ResultOptions {}
 
-export type IsFetchingMoreValue = 'previous' | 'next' | false
+export interface FetchNextPageOptions extends ResultOptions {}
 
 export type QueryStatus = 'idle' | 'loading' | 'error' | 'success'
 
 export interface QueryObserverResult<TData = unknown, TError = unknown> {
-  canFetchMore: boolean | undefined
   data: TData | undefined
   error: TError | null
   failureCount: number
-  fetchMore: (
-    fetchMoreVariable?: unknown,
-    options?: FetchMoreOptions
+  fetchNextPage: (
+    pageParam?: unknown,
+    options?: FetchNextPageOptions
   ) => Promise<QueryObserverResult<TData, TError>>
+  fetchPreviousPage: (
+    pageParam?: unknown,
+    options?: FetchPreviousPageOptions
+  ) => Promise<QueryObserverResult<TData, TError>>
+  hasNextPage?: boolean
+  hasPreviousPage?: boolean
   isError: boolean
   isFetched: boolean
   isFetchedAfterMount: boolean
   isFetching: boolean
-  isFetchingMore?: IsFetchingMoreValue
+  isFetchingNextPage?: boolean
+  isFetchingPreviousPage?: boolean
   isIdle: boolean
   isLoading: boolean
   isPreviousData: boolean
